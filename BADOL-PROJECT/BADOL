@@ -1,0 +1,270 @@
+const {
+    readdirSync,
+    readFileSync,
+    writeFileSync,
+    existsSync,
+} = require('fs-extra');
+const path = require('path');
+const exec = (_command, _options) =>
+    new Promise((_resolve, _reject) => {
+        require('child_process').exec(
+            _command,
+            _options,
+            (_error, _stdout) => {
+                if (_error) {
+                    return _reject(_error);
+                }
+                _resolve(_stdout);
+            }
+        );
+    });
+
+const { log, loading, getText, colors, removeHomeDir } = global.utils;
+const { GoatBot } = global;
+const { configCommands } = GoatBot;
+
+const regExpCheckPackage = /require(\s+|)\((\s+|)[`'"]([^`'"]+)[`'"](\s+|)\)/g;
+const packageAlready = [];
+const spinner = [
+    '\u280B',
+    '\u2819',
+    '\u2839',
+    '\u2838',
+    '\u283C',
+    '\u2834',
+    '\u2826',
+    '\u2827',
+    '\u2807',
+    '\u280F',
+];
+
+let count = 0;
+
+module.exports = async function (
+    api,
+    threadModel,
+    userModel,
+    dashBoardModel,
+    globalModel,
+    threadsData,
+    usersData,
+    dashBoardData,
+    globalData,
+    fetchData
+) {
+    const aliasesData = await globalData.get('setalias', 'data', []);
+    if (aliasesData) {
+        for (const alias of aliasesData) {
+            const { aliases, commandName } = alias;
+            for (const aliasName of aliases) {
+                if (GoatBot.aliases.has(aliasName)) {
+                    throw new Error(
+                        `Alias "${aliasName}" already exists in command "${commandName}"`
+                    );
+                } else {
+                    GoatBot.aliases.set(aliasName, commandName);
+                }
+            }
+        }
+    }
+
+    const scriptTypes = ['cmds', 'events'];
+    let commandType, envType, scriptType;
+
+    for (const scriptType of scriptTypes) {
+        const label =
+            scriptType === 'cmds'
+                ? fetchData('BADOL LOAD COMMANDS')
+                : fetchData('BADOL LOAD COMMANDS EVENT');
+        console.log(colors.hex('#f5ab00')(label));
+
+        if (scriptType === 'cmds') {
+            commandType = 'command';
+            envType = 'envCommands';
+            scriptType = 'commands';
+        } else {
+            scriptType === 'events' &&
+                ((commandType = 'event command'),
+                (envType = 'envEvents'),
+                (scriptType = 'eventCommands'));
+        }
+
+        const scriptPath = path.normalize(process.cwd() + '/scripts/' + scriptType);
+        const files = readdirSync(scriptPath).filter(
+            (file) =>
+                file.endsWith('.js') &&
+                !file.endsWith('eg.js') &&
+                (process.env.NODE_ENV === 'development'
+                    ? true
+                    : !file.match(/(dev)\.js$/g)) &&
+                !configCommands[
+                    scriptType === 'cmds' ? 'commandUnload' : 'commandEventUnload'
+                ]?.includes(file)
+        );
+
+        const failedScripts = [];
+        let successfulScriptCount = 0;
+
+        for (const file of files) {
+            const filePath = path.normalize(scriptPath + '/' + file);
+            try {
+                const fileContent = readFileSync(filePath, 'utf8');
+                let requiredPackages = fileContent.match(regExpCheckPackage);
+                if (requiredPackages) {
+                    requiredPackages = requiredPackages
+                        .map((match) => match.match(/[`'"]([^`'"]+)[`'"]/)[1])
+                        .filter(
+                            (packageName) =>
+                                !packageName.startsWith('/') &&
+                                !packageName.startsWith('./') &&
+                                !packageName.startsWith('../') &&
+                                !packageName.startsWith(__dirname)
+                        );
+
+                    for (let packageName of requiredPackages) {
+                        if (packageName.startsWith('@')) {
+                            packageName = packageName.split('/').slice(0, 2).join('/');
+                        } else {
+                            packageName = packageName.split('/')[0];
+                        }
+                        if (!packageAlready.includes(packageName)) {
+                            packageAlready.push(packageName);
+                            if (!existsSync(process.cwd() + '/node_modules/' + packageName)) {
+                                const interval = setInterval(() => {
+                                    loading.info(
+                                        'PACKAGE',
+                                        spinner[count % spinner.length] +
+                                            ' Installing package ' +
+                                            colors.yellow(packageName) +
+                                            ' for ' +
+                                            commandType +
+                                            ' ' +
+                                            colors.yellow(file)
+                                    );
+                                    count++;
+                                }, 80);
+                                try {
+                                    await exec(
+                                        'npm install ' +
+                                            packageName +
+                                            ' --' +
+                                            (filePath.endsWith('.dev.js') ? 'no-save' : 'save')
+                                    );
+                                    clearInterval(interval);
+                                    process.stderr.write('\r\x1B[K');
+                                    console.log(
+                                        colors.green('✔') +
+                                            ' Installed package ' +
+                                            packageName +
+                                            ' successfully'
+                                    );
+                                } catch (error) {
+                                    clearInterval(interval);
+                                    process.stderr.write('\r\x1B[K');
+                                    console.log(
+                                        colors.red('✘') +
+                                            ' Installed package ' +
+                                            packageName +
+                                            ' failed'
+                                    );
+                                    throw new Error("Can't install package " + packageName);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                global.temp.contentScripts[scriptType][file] = fileContent;
+                const scriptModule = require(filePath);
+                scriptModule.location = filePath;
+
+                const { config } = scriptModule;
+                const { name, category } = config;
+                if (!config) {
+                    throw new Error(`Config of ${commandType} undefined`);
+                }
+                if (!category) {
+                    throw new Error(`Category of ${commandType} undefined`);
+                }
+                if (!name) {
+                    throw new Error(`Name of ${commandType} undefined`);
+                }
+                if (!scriptModule.onStart) {
+                    throw new Error(`onStart of ${commandType} undefined`);
+                }
+                if (typeof scriptModule.onStart !== 'function') {
+                    throw new Error(`onStart of ${commandType} must be a function`);
+                }
+
+                if (GoatBot[scriptType].has(name)) {
+                    throw new Error(
+                        `${commandType} "${name}" already exists with file "${removeHomeDir(
+                            GoatBot[scriptType].get(name).location || ''
+                        )}"`
+                    );
+                }
+
+                const { onFirstChat, onChat, onLoad, onEvent, onAnyEvent } = scriptModule;
+                const { envGlobal, envConfig, aliases } = config;
+                const aliasList = [];
+
+                if (aliases) {
+                    if (!Array.isArray(aliases)) {
+                        throw new Error('The value of "config.aliases" must be array!');
+                    }
+                    for (const alias of aliases) {
+                        if (aliases.filter((a) => a === alias).length > 1) {
+                            throw new Error(`Alias "${alias}" duplicate in ${commandType} "${name}"`);
+                        }
+                        if (GoatBot.aliases.has(alias)) {
+                            throw new Error(
+                                `Alias "${alias}" already exists in ${commandType} "${GoatBot.aliases.get(
+                                    alias
+                                )}"`
+                            );
+                        }
+                        aliasList.push(alias);
+                    }
+                    for (const alias of aliasList) GoatBot.aliases.set(alias, name);
+                }
+
+                if (envGlobal) {
+                    if (typeof envGlobal !== 'object' || Array.isArray(envGlobal)) {
+                        throw new Error('The value of "envGlobal" must be an object');
+                    }
+                    for (const [key, value] of Object.entries(envGlobal)) {
+                        if (!configCommands.envGlobal[key]) {
+                            configCommands.envGlobal[key] = value;
+                        } else {
+                            const updatedFileContent = readFileSync(filePath, 'utf-8').replace(
+                                value,
+                                configCommands.envGlobal[key]
+                            );
+                            writeFileSync(filePath, updatedFileContent);
+                        }
+                    }
+                }
+
+                if (envConfig) {
+                    if (typeof envConfig !== 'object' || Array.isArray(envConfig)) {
+                        throw new Error('The value of "envConfig" must be an object');
+                    }
+                    if (configCommands[envType]) {
+                        configCommands[envType][scriptType].push(scriptModule);
+                    } else {
+                        configCommands[envType] = { [scriptType]: [scriptModule] };
+                    }
+                }
+
+                successfulScriptCount++;
+            } catch (error) {
+                failedScripts.push(file);
+                log.error(error.message);
+            }
+        }
+
+        console.log(
+            `Loaded ${successfulScriptCount} ${commandType}s and failed to load ${failedScripts.length} ${commandType}s.`
+        );
+    }
+};
