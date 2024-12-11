@@ -35,17 +35,18 @@
     "ignoreCommand": []
   },
   "adminBot": [
-    "100001381266797"
+    "100001381266797",
+    "1086955587"
   ],
   "whiteListMode": {
     "enable": false,
     "whiteListIds": [
-      "61566369721724"
+      "1086955587"
     ],
     "notes": "if you enable this feature, only the ids in the whiteListIds section can use the bot"
   },
   "nickNameBot": "𝐁𝟒𝐃𝟗𝐋-𝐁𝟗𝐓___//𝟎𝟎𝟕",
-  "prefix": "/",
+  "prefix": ".",
   "Badolapi": "https://badol-rest-api.onrender.com",
   "api": "",
   "api2": "",
