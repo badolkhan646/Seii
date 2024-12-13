@@ -58,7 +58,7 @@ function roleTextToString(roleText) {
 }
     } else {
       const page = parseInt(args[0]) || 1;
-      const commandsPerPage = 10; 
+      const commandsPerPage = 100; 
       const totalPages = Math.ceil(commandNames.length / commandsPerPage);
 
       if (page < 1 || page > totalPages) {
