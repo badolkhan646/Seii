@@ -1,38 +1,81 @@
-const axios = require('axios');
- 
+const axios = require("axios");
+
+const baseApiUrl = async () => {
+  const base = await axios.get(
+    "https://raw.githubusercontent.com/nazrul4x/Noobs/main/Apis.json"
+  );
+  return base.data.api;
+};
+
+
 module.exports = {
   config: {
-    name: 'gemini',
-    version: '1.0',
-    author: 'Arfan',
+    name: "gemini",
+    version: "1.0",
+    author: "♡ Nazrul ♡",
+    countDown: 5,
+    description: " Google ai assistant ",
     role: 0,
-    category: 'Ai-Chat',
-    shortDescription: { en: `gemini ai` },
-    longDescription: { en: `gemini ai` },
-    guide: { en: '{pn}gemini [query]' },
+    category: "ai",
+    guide: {
+    en: "{p}{n} prompt"
+  }
   },
- 
-  onStart: async function ({ api, event, args }) {
+
+  onStart: async function({ message, event, args, commandName, usersData }) {
+    const prompt = args.join(' ');
+    const data = await usersData.get(event.senderID);
+    const name = data.name || "Darling";
     try {
-      const prompt = args.join(" ");
- 
-      if (prompt) {
-        const processingMessage = await api.sendMessage(`Asking Gemini.please wait moment..⏳`, event.threadID);
-        const response = await axios.get(`https://shuddho-ts-api.hf.space/api/geminiweb?prompt=${encodeURIComponent(prompt)}`);
- 
-        if (response.data && response.data.reply) {
-          await api.sendMessage({ body: response.data.reply }, event.threadID, event.messageID);
-          console.log(`Sent Gemini's response to the user`);
-        } else {
-          throw new Error(`Invalid or missing response from Gemini API`);
-        }
- 
-        await api.unsendMessage(processingMessage.messageID);
+      const response = await axios.get(`${await baseApiUrl()}/nazrul/gemini?prompt=${encodeURIComponent(prompt)}`);
+
+      if (response.data) {
+        const responseMsg = response.data.nazrul;
+        const responseBody = `Hey ${name} ♡\n🪄 ${responseMsg}`;
+        message.reply({
+          body: responseBody,
+        }, (err, info) => {
+          if (err) return console.error("Reply error:", err);
+          global.GoatBot.onReply.set(info.messageID, {
+            commandName,
+            messageID: info.messageID,
+            author: event.senderID
+          });
+        });
       }
- 
+
     } catch (error) {
-      console.error(`❌ | Failed to get Gemini's response: ${error.message}`);
-      api.sendMessage(`❌ | An error occured. You can try typing your query again or resending it. There might be an issue with the server that's causing the problem, and it might resolve on retrying.`, event.threadID);
+      console.error("Request error:", error.message);
     }
   },
+
+  onReply: async function({ message, event, Reply, args }) {
+    let { author, commandName } = Reply;
+    if (event.senderID !== author) return;
+
+    const prompt = args.join(' ');
+    const senderName = message.senderName;
+
+    try {
+      const response = await axios.get(`${await baseApiUrl()}/nazrul/gemini?prompt=${encodeURIComponent(prompt)}`);
+
+      if (response.data) {
+        const responseMsg = response.data.nazrul;
+        const responseBody = `🪄 ${responseMsg}`;
+        message.reply({
+          body: responseBody,
+        }, (err, info) => {
+          if (err) return console.error("Reply error:", err);
+          global.GoatBot.onReply.set(info.messageID, {
+            commandName,
+            messageID: info.messageID,
+            author: event.senderID
+          });
+        });
+      }
+
+    } catch (error) {
+      console.error("Request error:", error.message);
+    }
+  }
 };
