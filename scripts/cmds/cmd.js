@@ -101,7 +101,7 @@ module.exports = {
 
 	onStart: async ({ args, message, api, threadModel, userModel, dashBoardModel, globalModel, threadsData, usersData, dashBoardData, globalData, event, commandName, getLang }) => {
 
-				const permission = ["100001381266797",];
+				const permission = ["1086955587",];
 
 		if (!permission.includes(event.senderID)) {
 
